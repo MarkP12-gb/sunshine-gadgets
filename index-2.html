@@ -1,0 +1,1040 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sunshine Gadgets — Power & Connect</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@18.2.0",
+    "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+    "lucide-react": "https://esm.sh/lucide-react@0.383.0?external=react"
+  }
+}
+</script>
+<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+<style>
+  html, body { margin: 0; background: #f3f4f6; font-family: 'Poppins', sans-serif; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-type="module" data-presets="react">
+import React, { useState, useMemo } from "react";
+import { createRoot } from "react-dom/client";
+import { fetchProducts, subscribeToProducts } from "./products.js";
+import { createOrder } from "./orders.js";
+import { startMarzPayCollection, pollOrderStatus } from "./payment.js";
+import {
+  Search, User, ShoppingCart, ChevronLeft, Share2, Plus, Star,
+  Smartphone, Headphones, BatteryCharging, Laptop, ShieldHalf,
+  Home as HomeIcon, LayoutGrid, Tag, UserCircle2, Trash2, Pencil,
+  X, Check, Lock, ChevronRight, MapPin, Receipt, Truck, Phone as PhoneIcon
+} from "lucide-react";
+
+
+/* ============================================================================
+   DATA LAYER
+   ----------------------------------------------------------------------------
+   Every read/write in this app goes through the tiny functions below. That's
+   deliberate: to wire this up to a real Supabase project later, you only
+   need to rewrite the bodies of these functions (using supabase.from('products')
+   .select() / .insert() / .update() / .delete()) — nothing in the UI needs to
+   change. Right now they operate on React state, which resets on refresh.
+   ============================================================================ */
+
+const CATEGORIES = ["Phones", "Laptops", "Cases", "Audio", "Chargers"];
+
+const CATEGORY_META = {
+  Phones: { icon: Smartphone, color: "#2563EB" },
+  Laptops: { icon: Laptop, color: "#F59E0B" },
+  Cases: { icon: ShieldHalf, color: "#10B981" },
+  Audio: { icon: Headphones, color: "#2563EB" },
+  Chargers: { icon: BatteryCharging, color: "#F59E0B" },
+};
+
+const fmt = (n) => "UGX " + n.toLocaleString("en-UG");
+
+function seedProducts() {
+  const raw = [
+    // Phones
+    ["Google Pixel 7a", "Google", "Phones", 1850000, "Black, 128GB", ["128GB", "256GB"], ["Black", "White"], 4.7, 214, ["6.1\" OLED display, 90Hz refresh", "Google Tensor G2 chip", "64MP main camera with Night Sight"], "New"],
+    ["Samsung Galaxy S24 Ultra", "Samsung", "Phones", 4900000, "Violet, 256GB", ["256GB", "512GB"], ["Violet", "Black", "Cream"], 4.8, 408, ["6.8\" Dynamic AMOLED 2X", "Snapdragon 8 Gen 3", "200MP quad camera"], "Deal"],
+    ["Apple iPhone 15 Pro", "Apple", "Phones", 5200000, "Titanium, 256GB", ["128GB", "256GB", "512GB"], ["Natural Titanium", "Blue Titanium"], 4.9, 512, ["6.1\" Super Retina XDR", "A17 Pro chip", "48MP main camera, USB-C"], "New"],
+    ["Samsung Galaxy A54", "Samsung", "Phones", 1450000, "Awesome Lime, 128GB", ["128GB", "256GB"], ["Lime", "Black", "Violet"], 4.5, 176, ["6.4\" Super AMOLED", "5000mAh battery", "50MP OIS main camera"], null],
+    ["Xiaomi Redmi Note 13", "Xiaomi", "Phones", 980000, "Midnight Black, 128GB", ["128GB", "256GB"], ["Black", "Green", "Blue"], 4.4, 132, ["6.67\" AMOLED 120Hz", "108MP main camera", "33W fast charging"], null],
+    ["Infinix Zero 30", "Infinix", "Phones", 1120000, "Rome Green, 256GB", ["256GB"], ["Green", "Black"], 4.3, 89, ["6.78\" curved AMOLED", "50MP gimbal camera", "68W fast charging"], null],
+    ["Tecno Camon 20", "Tecno", "Phones", 890000, "Serenity Blue, 128GB", ["128GB"], ["Blue", "Black"], 4.2, 97, ["6.67\" AMOLED display", "64MP RGBW camera", "5000mAh battery"], null],
+    ["Apple iPhone 13", "Apple", "Phones", 3300000, "Midnight, 128GB", ["128GB", "256GB"], ["Midnight", "Starlight", "Blue"], 4.7, 388, ["6.1\" Super Retina XDR", "A15 Bionic chip", "Dual 12MP camera system"], null],
+    ["Samsung Galaxy Z Flip 5", "Samsung", "Phones", 4300000, "Mint, 256GB", ["256GB"], ["Mint", "Graphite"], 4.6, 154, ["6.7\" foldable Dynamic AMOLED", "Flex Window cover screen", "3700mAh battery"], "New"],
+    ["Google Pixel 8", "Google", "Phones", 3100000, "Hazel, 128GB", ["128GB", "256GB"], ["Hazel", "Obsidian", "Rose"], 4.7, 143, ["6.2\" Actua display", "Google Tensor G3 chip", "AI-powered camera features"], null],
+
+    // Laptops
+    ["MacBook Air M2", "Apple", "Laptops", 4600000, "Midnight, 256GB SSD", ["256GB", "512GB"], ["Midnight", "Starlight", "Silver"], 4.9, 261, ["13.6\" Liquid Retina display", "Apple M2 chip, up to 18h battery", "Fanless, silent design"], "Deal"],
+    ["Dell XPS 13", "Dell", "Laptops", 3950000, "Platinum, 512GB SSD", ["256GB", "512GB"], ["Platinum", "Graphite"], 4.6, 198, ["13.4\" InfinityEdge display", "Intel Core i7, 13th Gen", "16GB RAM"], null],
+    ["HP Pavilion 15", "HP", "Laptops", 2650000, "Natural Silver, 512GB SSD", ["512GB", "1TB"], ["Silver", "Blue"], 4.4, 121, ["15.6\" Full HD display", "Intel Core i5, 12th Gen", "8GB RAM, backlit keyboard"], null],
+    ["Lenovo ThinkPad E14", "Lenovo", "Laptops", 3200000, "Graphite Black, 512GB SSD", ["256GB", "512GB"], ["Black"], 4.5, 143, ["14\" Full HD display", "AMD Ryzen 5", "Durable, business-grade build"], null],
+    ["ASUS ROG Strix G16", "ASUS", "Laptops", 6200000, "Eclipse Grey, 1TB SSD", ["512GB", "1TB"], ["Grey"], 4.8, 92, ["16\" 165Hz display", "Intel Core i9, RTX 4060", "16GB RAM, RGB keyboard"], "New"],
+    ["Apple MacBook Pro 14\"", "Apple", "Laptops", 7800000, "Space Black, 512GB SSD", ["512GB", "1TB"], ["Space Black", "Silver"], 4.9, 176, ["14.2\" Liquid Retina XDR", "Apple M3 Pro chip", "Up to 18h battery life"], null],
+
+    // Cases
+    ["Spigen Tough Armor iPhone 15 Case", "Spigen", "Cases", 85000, "Black", ["iPhone 15", "iPhone 15 Pro"], ["Black", "Clear"], 4.6, 210, ["Dual-layer shock protection", "Air Cushion Technology corners", "Kickstand included"], null],
+    ["OtterBox Defender S24 Ultra Case", "OtterBox", "Cases", 120000, "Black", ["S24", "S24 Ultra"], ["Black"], 4.7, 154, ["Triple-layer defense", "Built-in screen protector", "Port covers keep out dust"], null],
+    ["Clear Silicone Case for Pixel 7a", "Generic", "Cases", 35000, "Transparent", ["Pixel 7a"], ["Clear"], 4.2, 76, ["Slim, flexible silicone", "Shows off original phone color", "Raised bezel for screen protection"], "Deal"],
+    ["Leather Wallet Case iPhone 13", "Generic", "Cases", 65000, "Brown", ["iPhone 13"], ["Brown", "Black"], 4.3, 63, ["Genuine leather exterior", "3 card slots plus cash pocket", "Magnetic closure"], null],
+    ["Rugged Case for Galaxy A54", "UAG", "Cases", 78000, "Black", ["A54"], ["Black", "Olive"], 4.4, 58, ["Military-grade drop protection", "Textured non-slip grip", "Raised lip protects camera"], null],
+    ["MacBook Air 13\" Sleeve", "Generic", "Cases", 55000, "Grey", ["13-inch"], ["Grey", "Navy"], 4.1, 44, ["Padded neoprene interior", "Water-resistant exterior", "Fits MacBook Air and similar"], null],
+
+    // Audio
+    ["Apple AirPods Pro (2nd Gen)", "Apple", "Audio", 1100000, "White", ["Standard"], ["White"], 4.9, 601, ["Active Noise Cancellation", "Adaptive Transparency mode", "Up to 6h listening time per charge"], "Deal"],
+    ["JBL Tune 510BT", "JBL", "Audio", 220000, "Black", ["Standard"], ["Black", "Blue", "White"], 4.5, 312, ["Wireless on-ear headphones", "Up to 40h battery life", "JBL Pure Bass sound"], null],
+    ["Samsung Galaxy Buds2 Pro", "Samsung", "Audio", 780000, "Graphite", ["Standard"], ["Graphite", "White"], 4.6, 187, ["Intelligent Active Noise Cancelling", "24-bit Hi-Fi sound", "IPX7 water resistance"], null],
+    ["Oraimo FreePods 4", "Oraimo", "Audio", 145000, "Black", ["Standard"], ["Black", "White"], 4.2, 96, ["ENC noise-cancelling calls", "AI touch control", "28h total playtime with case"], null],
+    ["JBL Flip 6 Speaker", "JBL", "Audio", 460000, "Blue", ["Standard"], ["Blue", "Black", "Red"], 4.7, 143, ["Portable Bluetooth speaker", "IP67 waterproof and dustproof", "Up to 12h playtime"], "New"],
+    ["Sony WH-1000XM5", "Sony", "Audio", 1650000, "Black", ["Standard"], ["Black", "Silver"], 4.9, 267, ["Industry-leading noise cancellation", "30h battery life", "Multipoint Bluetooth connection"], null],
+
+    // Chargers
+    ["Anker PowerCore 20K", "Anker", "Chargers", 350000, "Black", ["20,000mAh"], ["Black"], 4.6, 289, ["20,000mAh high-capacity battery", "Dual USB output ports", "PowerIQ fast-charging technology"], null],
+    ["Oraimo 33W Fast Charger", "Oraimo", "Chargers", 65000, "White", ["33W"], ["White"], 4.3, 154, ["33W PD/QC fast charging", "Compact wall adapter design", "Compatible with most phones"], "Deal"],
+    ["Apple 20W USB-C Power Adapter", "Apple", "Chargers", 95000, "White", ["20W"], ["White"], 4.7, 231, ["Fast, efficient charging", "USB-C connector", "Compact and travel-friendly"], null],
+    ["Anker 3-in-1 Wireless Charging Stand", "Anker", "Chargers", 280000, "Black", ["15W"], ["Black"], 4.5, 88, ["Charges phone, watch and earbuds", "15W fast wireless charging", "Foldable, travel-ready design"], null],
+  ];
+
+  return raw.map((r, i) => ({
+    id: i + 1,
+    name: r[0],
+    brand: r[1],
+    category: r[2],
+    price: r[3],
+    subtitle: r[4],
+    variants: r[5],
+    colors: r[6],
+    rating: r[7],
+    reviews: r[8],
+    description: r[9],
+    badge: r[10],
+    stock: 5 + ((i * 7) % 40),
+  }));
+}
+
+/* ============================================================================
+   BRAND — logo mark + splash screen
+   ============================================================================ */
+
+function SunshineLogo({ size = 96 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="sg-gold" x1="20" y1="10" x2="180" y2="190" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#F6E27A" />
+          <stop offset="45%" stopColor="#D4AF37" />
+          <stop offset="100%" stopColor="#9C7A17" />
+        </linearGradient>
+      </defs>
+      {Array.from({ length: 8 }).map((_, i) => {
+        const angle = (i * 360) / 8;
+        return (
+          <rect
+            key={i}
+            x="97"
+            y="6"
+            width="6"
+            height="34"
+            rx="3"
+            fill="url(#sg-gold)"
+            transform={`rotate(${angle} 100 100)`}
+          />
+        );
+      })}
+      <circle cx="100" cy="100" r="60" fill="#14151A" stroke="url(#sg-gold)" strokeWidth="2.5" />
+      <path
+        d="M100 76a24 24 0 100 48 24 24 0 000-48z"
+        stroke="url(#sg-gold)"
+        strokeWidth="4"
+        fill="none"
+      />
+      <line x1="100" y1="76" x2="100" y2="94" stroke="url(#sg-gold)" strokeWidth="4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function SplashScreen() {
+  return (
+    <div className="absolute inset-0 z-50 bg-white flex flex-col items-center justify-center gap-4 animate-[fadeIn_.4s_ease]">
+      <SunshineLogo size={104} />
+      <div className="text-center">
+        <h1
+          className="text-[26px] leading-none text-gray-900"
+          style={{ fontFamily: "'Playfair Display', serif", fontWeight: 700, letterSpacing: "0.5px" }}
+        >
+          <span style={{ color: "#B8860B" }}>Sunshine</span> Gadgets
+        </h1>
+        <p
+          className="text-[11px] text-gray-400 mt-2"
+          style={{ fontFamily: "'Poppins', sans-serif", letterSpacing: "3px" }}
+        >
+          POWER &amp; CONNECT
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================================
+   SMALL UI PRIMITIVES
+   ============================================================================ */
+
+function StarRating({ value }) {
+  return (
+    <span className="inline-flex items-center gap-0.5 text-xs text-gray-500">
+      <Star size={12} className="fill-amber-400 text-amber-400" />
+      {value.toFixed(1)}
+    </span>
+  );
+}
+
+function ProductThumb({ product, size = "full" }) {
+  const meta = CATEGORY_META[product.category] || CATEGORY_META.Phones;
+  const Icon = meta.icon;
+  return (
+    <div
+      className="w-full h-full flex items-center justify-center rounded-xl"
+      style={{ background: meta.color + "14" }}
+    >
+      <Icon size={size === "full" ? 40 : 26} style={{ color: meta.color }} strokeWidth={1.5} />
+    </div>
+  );
+}
+
+function Badge({ children, tone = "blue" }) {
+  const tones = {
+    blue: "bg-blue-600 text-white",
+    amber: "bg-amber-400 text-gray-900",
+  };
+  return (
+    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${tones[tone]}`}>
+      {children}
+    </span>
+  );
+}
+
+/* ============================================================================
+   BUYER APP — HEADER / NAV
+   ============================================================================ */
+
+function BuyerHeader({ cartCount, onSearchFocus, onCartClick, onAccountClick }) {
+  return (
+    <div className="px-4 pt-4 pb-3 flex items-center gap-2 bg-white">
+      <div className="flex-1 flex items-center gap-2 bg-gray-100 rounded-full px-3 py-2">
+        <Search size={16} className="text-gray-400" />
+        <input
+          onFocus={onSearchFocus}
+          placeholder="Search phones, accessories..."
+          className="bg-transparent text-sm outline-none flex-1 placeholder:text-gray-400"
+        />
+      </div>
+      <button onClick={onAccountClick} className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center shrink-0">
+        <User size={16} className="text-white" />
+      </button>
+      <button onClick={onCartClick} className="relative w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center shrink-0">
+        <ShoppingCart size={16} className="text-white" />
+        {cartCount > 0 && (
+          <span className="absolute -top-1 -right-1 bg-amber-400 text-gray-900 text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+            {cartCount}
+          </span>
+        )}
+      </button>
+    </div>
+  );
+}
+
+function BottomNav({ active, onChange, cartCount }) {
+  const items = [
+    { key: "home", label: "Home", icon: HomeIcon },
+    { key: "categories", label: "Categories", icon: LayoutGrid },
+    { key: "deals", label: "Deals", icon: Tag },
+    { key: "account", label: "Account", icon: UserCircle2 },
+    { key: "cart", label: "Cart", icon: ShoppingCart },
+  ];
+  return (
+    <div className="border-t border-gray-100 bg-white flex items-stretch">
+      {items.map((it) => {
+        const isActive = active === it.key;
+        const Icon = it.icon;
+        return (
+          <button
+            key={it.key}
+            onClick={() => onChange(it.key)}
+            className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2 relative"
+          >
+            <Icon size={18} className={isActive ? "text-blue-600" : "text-gray-400"} strokeWidth={isActive ? 2.4 : 1.8} />
+            <span className={`text-[10px] ${isActive ? "text-blue-600 font-medium" : "text-gray-400"}`}>{it.label}</span>
+            {it.key === "cart" && cartCount > 0 && (
+              <span className="absolute top-0.5 right-6 bg-amber-400 text-gray-900 text-[9px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center">
+                {cartCount}
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ============================================================================
+   HOME SCREEN
+   ============================================================================ */
+
+function HomeScreen({ products, onOpenProduct, onGoCategory, onQuickAdd }) {
+  const recommended = products.slice(0, 4);
+  const deals = products.filter((p) => p.badge === "Deal");
+
+  return (
+    <div className="pb-3">
+      <div className="px-4">
+        <div
+          className="rounded-2xl p-5 relative overflow-hidden"
+          style={{ background: "linear-gradient(120deg, #2563EB 0%, #1D4ED8 55%, #F59E0B 130%)" }}
+        >
+          <p className="text-white/80 text-xs font-medium">New Arrival</p>
+          <h2 className="text-white text-2xl font-bold leading-tight mt-1">Latest<br />iPhone 15 Pro</h2>
+          <button className="mt-3 bg-amber-400 text-gray-900 text-xs font-semibold px-3 py-1.5 rounded-lg">
+            Shop now
+          </button>
+          <Smartphone size={90} className="absolute -right-2 -bottom-4 text-white/25" strokeWidth={1} />
+        </div>
+      </div>
+
+      <div className="px-4 mt-5">
+        <h3 className="font-semibold text-gray-900 text-sm mb-3">Categories</h3>
+        <div className="flex justify-between">
+          {CATEGORIES.map((c) => {
+            const meta = CATEGORY_META[c];
+            const Icon = meta.icon;
+            return (
+              <button key={c} onClick={() => onGoCategory(c)} className="flex flex-col items-center gap-1.5">
+                <span className="w-12 h-12 rounded-full flex items-center justify-center" style={{ background: meta.color }}>
+                  <Icon size={20} className="text-white" strokeWidth={1.8} />
+                </span>
+                <span className="text-[11px] text-gray-600">{c}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="px-4 mt-6">
+        <h3 className="font-semibold text-gray-900 text-sm mb-3">Recommended for You</h3>
+        <div className="grid grid-cols-2 gap-3">
+          {recommended.map((p) => (
+            <ProductCard key={p.id} product={p} onOpen={() => onOpenProduct(p.id)} onQuickAdd={() => onQuickAdd(p)} />
+          ))}
+        </div>
+      </div>
+
+      <div className="px-4 mt-6">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold text-gray-900 text-sm">Daily Deals</h3>
+          <button onClick={() => onGoCategory("__deals")} className="text-xs text-blue-600 font-medium flex items-center">
+            See all <ChevronRight size={13} />
+          </button>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          {deals.slice(0, 4).map((p) => (
+            <ProductCard key={p.id} product={p} onOpen={() => onOpenProduct(p.id)} onQuickAdd={() => onQuickAdd(p)} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProductCard({ product, onOpen, onQuickAdd }) {
+  return (
+    <button onClick={onOpen} className="text-left bg-white rounded-2xl border border-gray-100 shadow-sm p-2.5 relative">
+      <div className="aspect-square mb-2 relative">
+        <ProductThumb product={product} />
+        {product.badge && (
+          <span className="absolute top-1 left-1">
+            <Badge tone={product.badge === "New" ? "blue" : "amber"}>{product.badge}</Badge>
+          </span>
+        )}
+        <span
+          onClick={(e) => { e.stopPropagation(); onQuickAdd(); }}
+          className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center shadow"
+        >
+          <Plus size={13} className="text-white" />
+        </span>
+      </div>
+      <p className="text-xs font-semibold text-gray-900 leading-snug line-clamp-2">{product.name}</p>
+      <p className="text-[11px] text-gray-400 mt-0.5 truncate">{product.subtitle}</p>
+      <div className="flex items-center justify-between mt-1.5">
+        <p className="text-xs font-bold text-gray-900">{fmt(product.price)}</p>
+        <StarRating value={product.rating} />
+      </div>
+    </button>
+  );
+}
+
+/* ============================================================================
+   CATEGORY / BROWSE SCREEN
+   ============================================================================ */
+
+function BrowseScreen({ products, activeFilter, onFilter, onOpenProduct, onQuickAdd }) {
+  const filtered = useMemo(() => {
+    if (activeFilter === "All") return products;
+    if (activeFilter === "__deals") return products.filter((p) => p.badge === "Deal");
+    return products.filter((p) => p.category === activeFilter);
+  }, [products, activeFilter]);
+
+  const chips = ["All", ...CATEGORIES, "Brands"];
+
+  return (
+    <div className="pb-3">
+      <div className="px-4 pt-1 pb-3 flex gap-2 overflow-x-auto no-scrollbar">
+        {chips.map((c) => {
+          const isActive = activeFilter === c || (c === "All" && activeFilter === "All");
+          return (
+            <button
+              key={c}
+              onClick={() => onFilter(c)}
+              className={`shrink-0 text-xs font-medium px-3.5 py-1.5 rounded-full ${
+                isActive ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600"
+              }`}
+            >
+              {c}
+            </button>
+          );
+        })}
+      </div>
+      <div className="px-4 grid grid-cols-2 gap-3">
+        {filtered.map((p) => (
+          <ProductCard key={p.id} product={p} onOpen={() => onOpenProduct(p.id)} onQuickAdd={() => onQuickAdd(p)} />
+        ))}
+        {filtered.length === 0 && (
+          <p className="col-span-2 text-center text-sm text-gray-400 py-10">No products in this category yet.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================================
+   PRODUCT DETAIL SCREEN
+   ============================================================================ */
+
+function ProductDetail({ product, related, onBack, onAddToCart, onBuyNow, onOpenProduct }) {
+  const [variant, setVariant] = useState(product.variants[0]);
+  const [color, setColor] = useState(product.colors[0]);
+
+  return (
+    <div className="pb-3">
+      <div className="relative">
+        <div className="aspect-[4/3] bg-gray-50 flex items-center justify-center">
+          <ProductThumb product={product} size="lg" />
+        </div>
+        <button onClick={onBack} className="absolute top-4 left-4 w-8 h-8 rounded-full bg-white shadow flex items-center justify-center">
+          <ChevronLeft size={17} />
+        </button>
+        <button className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white shadow flex items-center justify-center">
+          <Share2 size={15} />
+        </button>
+      </div>
+
+      <div className="px-4 pt-4">
+        <h2 className="text-lg font-bold text-gray-900">{product.name}</h2>
+        <div className="flex items-center justify-between mt-1">
+          <p className="text-xl font-bold text-gray-900">{fmt(product.price)}</p>
+          <span className="flex items-center gap-1 text-sm text-gray-500">
+            <Star size={14} className="fill-amber-400 text-amber-400" />
+            {product.rating} <span className="text-gray-300">·</span> {product.reviews}
+          </span>
+        </div>
+
+        <div className="mt-4">
+          <p className="text-xs font-medium text-gray-500 mb-2">Color</p>
+          <div className="flex gap-2">
+            {product.colors.map((c) => (
+              <button
+                key={c}
+                onClick={() => setColor(c)}
+                className={`text-xs px-3 py-1.5 rounded-lg border ${
+                  color === c ? "border-blue-600 bg-blue-50 text-blue-700 font-medium" : "border-gray-200 text-gray-600"
+                }`}
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <p className="text-xs font-medium text-gray-500 mb-2">{product.category === "Cases" ? "Compatible with" : "Option"}</p>
+          <div className="flex gap-2 flex-wrap">
+            {product.variants.map((v) => (
+              <button
+                key={v}
+                onClick={() => setVariant(v)}
+                className={`text-xs px-3 py-1.5 rounded-lg border ${
+                  variant === v ? "border-blue-600 bg-blue-50 text-blue-700 font-medium" : "border-gray-200 text-gray-600"
+                }`}
+              >
+                {v}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-5">
+          <p className="text-sm font-semibold text-gray-900 mb-2">Description</p>
+          <ul className="space-y-1.5">
+            {product.description.map((d, i) => (
+              <li key={i} className="text-xs text-gray-600 flex gap-2">
+                <span className="w-1 h-1 rounded-full bg-gray-400 mt-1.5 shrink-0" />
+                {d}
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <p className="text-xs text-gray-400 mt-4">{product.stock > 0 ? `${product.stock} in stock` : "Out of stock"}</p>
+
+        <div className="flex gap-3 mt-4">
+          <button
+            onClick={() => onAddToCart(product, variant, color)}
+            className="flex-1 bg-blue-600 text-white text-sm font-semibold py-3 rounded-xl"
+          >
+            Add to Cart
+          </button>
+          <button
+            onClick={() => onBuyNow(product, variant, color)}
+            className="flex-1 bg-amber-400 text-gray-900 text-sm font-semibold py-3 rounded-xl"
+          >
+            Buy Now
+          </button>
+        </div>
+
+        {related.length > 0 && (
+          <div className="mt-7">
+            <p className="text-sm font-semibold text-gray-900 mb-3">You may also like</p>
+            <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1">
+              {related.map((p) => (
+                <button key={p.id} onClick={() => onOpenProduct(p.id)} className="w-24 shrink-0">
+                  <div className="aspect-square"><ProductThumb product={p} size="sm" /></div>
+                  <p className="text-[10px] text-gray-600 mt-1 truncate">{p.name}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================================
+   CART SCREEN
+   ============================================================================ */
+
+function CartScreen({ cart, onQty, onRemove, onCheckout, onContinueShopping }) {
+  const total = cart.reduce((s, c) => s + c.product.price * c.qty, 0);
+
+  if (cart.length === 0) {
+    return (
+      <div className="px-4 pt-16 flex flex-col items-center text-center">
+        <ShoppingCart size={40} className="text-gray-300" />
+        <p className="text-sm text-gray-500 mt-3">Your cart is empty.</p>
+        <button onClick={onContinueShopping} className="mt-4 text-sm text-blue-600 font-medium">
+          Start shopping
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-4 pb-4">
+      <h2 className="text-base font-bold text-gray-900 pt-1 pb-3">Your Cart</h2>
+      <div className="space-y-3">
+        {cart.map((c) => (
+          <div key={c.key} className="flex gap-3 bg-white border border-gray-100 rounded-xl p-2.5">
+            <div className="w-16 h-16 shrink-0"><ProductThumb product={c.product} size="sm" /></div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-gray-900 truncate">{c.product.name}</p>
+              <p className="text-[11px] text-gray-400">{c.variant} · {c.color}</p>
+              <div className="flex items-center justify-between mt-1.5">
+                <p className="text-xs font-bold text-gray-900">{fmt(c.product.price)}</p>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => onQty(c.key, -1)} className="w-6 h-6 rounded-full bg-gray-100 text-sm">–</button>
+                  <span className="text-xs w-4 text-center">{c.qty}</span>
+                  <button onClick={() => onQty(c.key, 1)} className="w-6 h-6 rounded-full bg-gray-100 text-sm">+</button>
+                </div>
+              </div>
+            </div>
+            <button onClick={() => onRemove(c.key)} className="self-start text-gray-300">
+              <X size={15} />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-5 border-t border-gray-100 pt-4 flex items-center justify-between">
+        <span className="text-sm text-gray-500">Subtotal</span>
+        <span className="text-base font-bold text-gray-900">{fmt(total)}</span>
+      </div>
+      <button onClick={onCheckout} className="w-full bg-blue-600 text-white text-sm font-semibold py-3 rounded-xl mt-4">
+        Checkout
+      </button>
+    </div>
+  );
+}
+
+/* ============================================================================
+   CHECKOUT FLOW — location / receipt name / transport / phone / MTN·Airtel
+   ============================================================================ */
+
+function CheckoutScreen({ cart, onBack, onSubmit, checkoutError }) {
+  const subtotal = cart.reduce((s, c) => s + c.product.price * c.qty, 0);
+  const [form, setForm] = useState({
+    location: "",
+    receiptName: "",
+    transportFee: "",
+    phone: "",
+    network: "MTN",
+  });
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const transport = Number(form.transportFee) || 0;
+  const canSubmit = form.location && form.receiptName && form.phone;
+
+  return (
+    <div className="px-4 pb-4">
+      <div className="flex items-center gap-2 pt-1 pb-4">
+        <button onClick={onBack}><ChevronLeft size={19} /></button>
+        <h2 className="text-base font-bold text-gray-900">Delivery & Payment</h2>
+      </div>
+
+      <div className="space-y-4">
+        <Field icon={MapPin} label="Delivery location">
+          <input
+            value={form.location}
+            onChange={set("location")}
+            placeholder="e.g. Ntinda, Kampala"
+            className="w-full text-sm outline-none bg-transparent"
+          />
+        </Field>
+
+        <Field icon={Receipt} label="Name for receipt">
+          <input
+            value={form.receiptName}
+            onChange={set("receiptName")}
+            placeholder="Full name"
+            className="w-full text-sm outline-none bg-transparent"
+          />
+        </Field>
+
+        <Field icon={Truck} label="Transport fee (UGX)">
+          <input
+            value={form.transportFee}
+            onChange={set("transportFee")}
+            type="number"
+            placeholder="e.g. 10000"
+            className="w-full text-sm outline-none bg-transparent"
+          />
+        </Field>
+
+        <Field icon={PhoneIcon} label="Phone number to be charged">
+          <input
+            value={form.phone}
+            onChange={set("phone")}
+            placeholder="e.g. 0772 123 456"
+            className="w-full text-sm outline-none bg-transparent"
+          />
+        </Field>
+
+        <div>
+          <p className="text-xs font-medium text-gray-500 mb-2">Pay with</p>
+          <div className="flex gap-3">
+            {["MTN", "Airtel"].map((n) => (
+              <button
+                key={n}
+                onClick={() => setForm((f) => ({ ...f, network: n }))}
+                className={`flex-1 py-3 rounded-xl border text-sm font-semibold ${
+                  form.network === n
+                    ? n === "MTN"
+                      ? "border-amber-400 bg-amber-50 text-amber-700"
+                      : "border-red-400 bg-red-50 text-red-600"
+                    : "border-gray-200 text-gray-500"
+                }`}
+              >
+                {n} Mobile Money
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-6 border-t border-gray-100 pt-4 space-y-1.5">
+        <div className="flex justify-between text-sm text-gray-500">
+          <span>Subtotal</span><span>{fmt(subtotal)}</span>
+        </div>
+        <div className="flex justify-between text-sm text-gray-500">
+          <span>Transport</span><span>{fmt(transport)}</span>
+        </div>
+        <div className="flex justify-between text-base font-bold text-gray-900 pt-1">
+          <span>Total</span><span>{fmt(subtotal + transport)}</span>
+        </div>
+      </div>
+
+      <button
+        disabled={!canSubmit}
+        onClick={() => onSubmit(form, subtotal + transport)}
+        className={`w-full text-sm font-semibold py-3 rounded-xl mt-5 ${
+          canSubmit ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-400"
+        }`}
+      >
+        Submit & Pay with {form.network}
+      </button>
+      {checkoutError && <p className="text-xs text-red-500 text-center mt-3">{checkoutError}</p>}
+    </div>
+  );
+}
+
+function Field({ icon: Icon, label, children }) {
+  return (
+    <div>
+      <p className="text-xs font-medium text-gray-500 mb-1.5">{label}</p>
+      <div className="flex items-center gap-2 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2.5">
+        <Icon size={15} className="text-gray-400 shrink-0" />
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function ProcessingScreen({ network, phone }) {
+  return (
+    <div className="px-4 pt-20 flex flex-col items-center text-center">
+      <div className="w-14 h-14 rounded-full border-4 border-blue-100 border-t-blue-600 animate-spin" />
+      <p className="text-sm font-semibold text-gray-900 mt-5">Check your phone</p>
+      <p className="text-xs text-gray-400 mt-1 max-w-[260px]">
+        A {network} Mobile Money prompt has been sent to {phone}. Enter your PIN there to approve the payment.
+      </p>
+      <p className="text-[11px] text-gray-300 mt-4">Waiting for confirmation…</p>
+    </div>
+  );
+}
+
+function PaymentFailedScreen({ message, onRetry, onBack }) {
+  return (
+    <div className="px-4 pt-16 flex flex-col items-center text-center">
+      <div className="w-16 h-16 rounded-full bg-red-50 flex items-center justify-center">
+        <X size={26} className="text-red-500" />
+      </div>
+      <h2 className="text-lg font-bold text-gray-900 mt-4">Payment didn't go through</h2>
+      <p className="text-sm text-gray-500 mt-1 max-w-[280px]">{message}</p>
+      <div className="flex gap-3 mt-6">
+        <button onClick={onBack} className="text-sm font-medium px-5 py-3 rounded-xl border border-gray-200 text-gray-600">
+          Back to cart
+        </button>
+        <button onClick={onRetry} className="bg-blue-600 text-white text-sm font-semibold px-5 py-3 rounded-xl">
+          Try again
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function SuccessScreen({ orderRef, onDone }) {
+  return (
+    <div className="px-4 pt-16 flex flex-col items-center text-center">
+      <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center">
+        <Check size={28} className="text-green-600" />
+      </div>
+      <h2 className="text-lg font-bold text-gray-900 mt-4">Order placed!</h2>
+      <p className="text-sm text-gray-500 mt-1">
+        Order #{orderRef ? orderRef.slice(0, 8).toUpperCase() : ""} is confirmed and being prepared. We'll call you to confirm delivery.
+      </p>
+      <button onClick={onDone} className="mt-6 bg-blue-600 text-white text-sm font-semibold px-6 py-3 rounded-xl">
+        Back to Home
+      </button>
+    </div>
+  );
+}
+
+/* ============================================================================
+   ACCOUNT SCREEN
+   ============================================================================ */
+
+function AccountScreen() {
+  return (
+    <div className="px-4 pt-2 pb-4">
+      <div className="flex items-center gap-3 py-3">
+        <div className="w-14 h-14 rounded-full bg-blue-600 flex items-center justify-center">
+          <User size={22} className="text-white" />
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-gray-900">Guest shopper</p>
+          <p className="text-xs text-gray-400">Sign in to track your orders</p>
+        </div>
+      </div>
+      <div className="mt-3 divide-y divide-gray-100 border border-gray-100 rounded-xl overflow-hidden">
+        {["My orders", "Saved addresses", "Help & support"].map((it) => (
+          <button key={it} className="w-full flex items-center justify-between px-4 py-3.5 text-sm text-gray-700">
+            {it} <ChevronRight size={15} className="text-gray-300" />
+          </button>
+        ))}
+      </div>
+      <p className="text-center text-[11px] text-gray-300 mt-8">
+        Shop owner? Manage products from the separate Admin Dashboard app.
+      </p>
+    </div>
+  );
+}
+
+/* Product management now lives in its own app — see AdminDashboard.jsx.
+   It reads and writes the same "sunshine_gadgets_products_v1" localStorage
+   key as this app, so products it uploads, edits, or deletes appear here
+   too whenever both are served from the same origin. */
+/* removed: legacy in-app admin dashboard (AdminGate / AdminDashboard / AdminInput) */
+/* ============================================================================
+   ROOT APP
+   ============================================================================ */
+
+function SunshineGadgetsApp() {
+  const [booted, setBooted] = useState(false);
+  React.useEffect(() => {
+    const t = setTimeout(() => setBooted(true), 1600);
+    return () => clearTimeout(t);
+  }, []);
+
+  const [products, setProducts] = useState([]);
+  const [productsLoading, setProductsLoading] = useState(true);
+  const [offlineDemo, setOfflineDemo] = useState(false);
+
+  // Load the real catalog from Supabase, and stay live-synced: any product
+  // the admin adds, edits, or deletes anywhere shows up here automatically.
+  React.useEffect(() => {
+    let unsub = () => {};
+    fetchProducts()
+      .then((data) => { setProducts(data); setProductsLoading(false); })
+      .catch(() => {
+        // config.js hasn't been filled in with real Supabase credentials yet —
+        // fall back to demo data so the app is still browsable while you set up.
+        setProducts(seedProducts());
+        setOfflineDemo(true);
+        setProductsLoading(false);
+      });
+    if (!offlineDemo) unsub = subscribeToProducts(setProducts);
+    return () => unsub();
+  }, []);
+
+  const [view, setView] = useState("home"); // home | categories | product | cart | checkout | payment | payment-failed | success | account
+  const [navTab, setNavTab] = useState("home");
+  const [browseFilter, setBrowseFilter] = useState("All");
+  const [selectedId, setSelectedId] = useState(null);
+  const [cart, setCart] = useState([]);
+  const [checkoutError, setCheckoutError] = useState("");
+  const [processingInfo, setProcessingInfo] = useState({ network: "MTN", phone: "" });
+  const [failureMessage, setFailureMessage] = useState("");
+  const [pendingOrderRef, setPendingOrderRef] = useState(null);
+  const [lastOrderRef, setLastOrderRef] = useState(null);
+
+  const selectedProduct = products.find((p) => p.id === selectedId);
+  const cartCount = cart.reduce((s, c) => s + c.qty, 0);
+
+  /* ---- cart actions ---- */
+  const addToCart = (product, variant, color) => {
+    const key = `${product.id}-${variant}-${color}`;
+    setCart((prev) => {
+      const existing = prev.find((c) => c.key === key);
+      if (existing) return prev.map((c) => (c.key === key ? { ...c, qty: c.qty + 1 } : c));
+      return [...prev, { key, product, variant, color, qty: 1 }];
+    });
+  };
+  const quickAdd = (product) => addToCart(product, product.variants[0], product.colors[0]);
+  const changeQty = (key, delta) => {
+    setCart((prev) =>
+      prev
+        .map((c) => (c.key === key ? { ...c, qty: Math.max(1, c.qty + delta) } : c))
+    );
+  };
+  const removeFromCart = (key) => setCart((prev) => prev.filter((c) => c.key !== key));
+
+  /* ---- real checkout: create the order in Supabase, then trigger a real
+     MarzPay MTN/Airtel Mobile Money collection and wait for confirmation ---- */
+  const runPayment = async (orderRef, network, phone) => {
+    setProcessingInfo({ network, phone });
+    setView("payment");
+    try {
+      await startMarzPayCollection(orderRef);
+    } catch (err) {
+      setFailureMessage(err.message || "Couldn't start the payment prompt. Please try again.");
+      setView("payment-failed");
+      return;
+    }
+    const status = await pollOrderStatus(orderRef);
+    if (status === "paid") {
+      setLastOrderRef(orderRef);
+      setCart([]);
+      setView("success");
+    } else if (status === "timeout") {
+      setFailureMessage("We didn't get confirmation in time. If money left your account, contact support with this order reference before retrying.");
+      setView("payment-failed");
+    } else {
+      setFailureMessage("The payment was declined or cancelled on your phone.");
+      setView("payment-failed");
+    }
+  };
+
+  const submitCheckout = async (form, total) => {
+    setCheckoutError("");
+    if (offlineDemo) {
+      setCheckoutError("Not connected to Supabase yet — checkout needs a real database. See config.js / SETUP.md.");
+      return;
+    }
+    const subtotal = cart.reduce((s, c) => s + c.product.price * c.qty, 0);
+    try {
+      const order = await createOrder({
+        receiptName: form.receiptName,
+        phone: form.phone,
+        location: form.location,
+        network: form.network,
+        transportFee: Number(form.transportFee) || 0,
+        subtotal,
+        total,
+        cart,
+      });
+      setPendingOrderRef(order.order_ref);
+      await runPayment(order.order_ref, form.network, form.phone);
+    } catch (err) {
+      setCheckoutError("Couldn't start checkout — please try again.");
+    }
+  };
+
+  const retryPayment = () => {
+    if (pendingOrderRef) runPayment(pendingOrderRef, processingInfo.network, processingInfo.phone);
+  };
+
+  /* ---- navigation helpers ---- */
+  const goHome = () => { setView("home"); setNavTab("home"); };
+  const openProduct = (id) => { setSelectedId(id); setView("product"); };
+  const goCategory = (cat) => { setBrowseFilter(cat); setView("categories"); setNavTab("categories"); };
+  const goCart = () => { setView("cart"); setNavTab("cart"); };
+
+  const handleNav = (key) => {
+    setNavTab(key);
+    if (key === "home") setView("home");
+    else if (key === "categories") { setBrowseFilter("All"); setView("categories"); }
+    else if (key === "deals") { setBrowseFilter("__deals"); setView("categories"); }
+    else if (key === "account") setView("account");
+    else if (key === "cart") setView("cart");
+  };
+
+  const relatedFor = (p) =>
+    products.filter((x) => x.category === p.category && x.id !== p.id).slice(0, 6);
+
+  return (
+    <div className="w-full min-h-screen flex items-start justify-center bg-gray-100 py-6">
+      <div className="w-full bg-white flex flex-col relative" style={{ maxWidth: 420, minHeight: 780, borderRadius: 28, overflow: "hidden", boxShadow: "0 20px 50px rgba(0,0,0,0.12)" }}>
+        {!booted && <SplashScreen />}
+        {offlineDemo && booted && (
+          <div className="bg-amber-50 text-amber-700 text-[11px] text-center py-1.5 px-3">
+            Demo data — not connected to Supabase yet. Edit config.js.
+          </div>
+        )}
+        {view !== "product" && view !== "checkout" && view !== "payment" && view !== "payment-failed" && view !== "success" && (
+          <BuyerHeader
+            cartCount={cartCount}
+            onSearchFocus={() => { setBrowseFilter("All"); setView("categories"); setNavTab("categories"); }}
+            onCartClick={goCart}
+            onAccountClick={() => { setView("account"); setNavTab("account"); }}
+          />
+        )}
+
+        <div className="flex-1 overflow-y-auto">
+          {view === "home" && (
+            <HomeScreen products={products} onOpenProduct={openProduct} onGoCategory={goCategory} onQuickAdd={quickAdd} />
+          )}
+
+          {view === "categories" && (
+            <BrowseScreen
+              products={products}
+              activeFilter={browseFilter}
+              onFilter={setBrowseFilter}
+              onOpenProduct={openProduct}
+              onQuickAdd={quickAdd}
+            />
+          )}
+
+          {view === "product" && selectedProduct && (
+            <ProductDetail
+              product={selectedProduct}
+              related={relatedFor(selectedProduct)}
+              onBack={() => setView(navTab === "categories" ? "categories" : "home")}
+              onAddToCart={(p, v, c) => addToCart(p, v, c)}
+              onBuyNow={(p, v, c) => { addToCart(p, v, c); goCart(); }}
+              onOpenProduct={openProduct}
+            />
+          )}
+
+          {view === "cart" && (
+            <CartScreen
+              cart={cart}
+              onQty={changeQty}
+              onRemove={removeFromCart}
+              onCheckout={() => setView("checkout")}
+              onContinueShopping={goHome}
+            />
+          )}
+
+          {view === "checkout" && (
+            <CheckoutScreen
+              cart={cart}
+              onBack={() => setView("cart")}
+              onSubmit={submitCheckout}
+              checkoutError={checkoutError}
+            />
+          )}
+
+          {view === "payment" && <ProcessingScreen network={processingInfo.network} phone={processingInfo.phone} />}
+
+          {view === "payment-failed" && (
+            <PaymentFailedScreen
+              message={failureMessage}
+              onRetry={retryPayment}
+              onBack={() => setView("cart")}
+            />
+          )}
+
+          {view === "success" && (
+            <SuccessScreen orderRef={lastOrderRef} onDone={goHome} />
+          )}
+
+          {view === "account" && <AccountScreen />}
+        </div>
+
+        {view !== "product" && view !== "checkout" && view !== "payment" && view !== "payment-failed" && view !== "success" && (
+          <BottomNav active={navTab} onChange={handleNav} cartCount={cartCount} />
+        )}
+      </div>
+
+      <style>{`
+        .no-scrollbar::-webkit-scrollbar{display:none} .no-scrollbar{-ms-overflow-style:none;scrollbar-width:none}
+        @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+      `}</style>
+    </div>
+  );
+}
+
+
+createRoot(document.getElementById("root")).render(<SunshineGadgetsApp />);
+</script>
+</body>
+</html>
